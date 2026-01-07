@@ -1,0 +1,119 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: hh_monitor
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/hh_monitor
+      REDIS_URL: redis://redis:6379
+      COMPLIANCE_STRICT: "true"
+      HH_USER_AGENT: "HH-Vacancy-Monitor/1.0"
+      SCAN_GRACE_HOURS: "48"
+      NODE_ENV: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/.next
+
+  worker-scan:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: npm run worker:scan
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/hh_monitor
+      REDIS_URL: redis://redis:6379
+      COMPLIANCE_STRICT: "true"
+      HH_USER_AGENT: "HH-Vacancy-Monitor/1.0"
+      SCAN_GRACE_HOURS: "48"
+      NODE_ENV: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - /app/node_modules
+
+  worker-enrichment:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: npm run worker:enrichment
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/hh_monitor
+      REDIS_URL: redis://redis:6379
+      COMPLIANCE_STRICT: "true"
+      HH_USER_AGENT: "HH-Vacancy-Monitor/1.0"
+      NODE_ENV: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - /app/node_modules
+
+  worker-cron:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: npm run worker:cron
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/hh_monitor
+      REDIS_URL: redis://redis:6379
+      COMPLIANCE_STRICT: "true"
+      HH_USER_AGENT: "HH-Vacancy-Monitor/1.0"
+      SCAN_GRACE_HOURS: "48"
+      NODE_ENV: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - /app/node_modules
+
+volumes:
+  postgres_data:
+  redis_data:
